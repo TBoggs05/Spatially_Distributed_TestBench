@@ -17,8 +17,8 @@ public class MeshClient : MonoBehaviour
     public int myPlayerId = -1;
 
     [Header("Map Boundaries")]
-    public float maxX = 10f;
-    public float maxZ = 10f;
+    public float maxX = 50f;
+    public float maxZ = 50f;
 
     private NetworkDriver driver;
     private NetworkConnection serverConn;
@@ -43,7 +43,7 @@ public class MeshClient : MonoBehaviour
 
         // Assign class field (no 'Vector2' type prefix) and avoid spawning exactly on X = 0
         float spawnX = Random.Range(-maxX, maxX);
-        if (Mathf.Abs(spawnX) < 0.5f) spawnX = (spawnX < 0f) ? -0.5f : 0.5f;
+        if (Mathf.Abs(spawnX) < 5f) spawnX = (spawnX < 0f) ? -5.5f : 5.5f;
         currentPosition = new Vector2(spawnX, Random.Range(-maxZ, maxZ));
         transform.position = new Vector3(currentPosition.x, 0f, currentPosition.y);
 

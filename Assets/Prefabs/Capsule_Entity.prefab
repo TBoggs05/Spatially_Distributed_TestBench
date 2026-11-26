@@ -158,6 +158,7 @@ MonoBehaviour:
   serverIp: 127.0.0.1
   region0Port: 7777
   region1Port: 7778
-  isHeadlessBot: 0
+  isHeadlessBot: 1
   myPlayerId: -1
-  activeRegionIndex: 0
+  maxX: 50
+  maxZ: 50
