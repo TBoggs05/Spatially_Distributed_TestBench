@@ -17,14 +17,16 @@ public class MeshClient : MonoBehaviour
     public int myPlayerId = -1;
 
     [Header("Map Boundaries")]
-    public float maxX = 50f;
-    public float maxZ = 50f;
+    public float maxX = 10f;
+    public float maxZ = 10f;
 
     private NetworkDriver driver;
     private NetworkConnection serverConn;
     private NetworkConnection pendingConn = default;
-    private uint inputSeq = 0;
+    private NetworkConnection retiringConn = default;
+    private float retiringConnTime = 0f;
 
+    private uint inputSeq = 0;
     private Vector2 currentPosition;
     private Vector2 botMoveDir;
     private float nextDirectionChangeTime = 0f;
@@ -34,16 +36,16 @@ public class MeshClient : MonoBehaviour
     private string logPath;
 
     private bool connectedToActiveServer = false;
-    private int activeRegionIndex;
+    public int activeRegionIndex;
     private bool handoffInProgress = false;
+    private float handoffStartTime = 0f;
 
     void Start()
     {
         if (myPlayerId < 0) myPlayerId = Random.Range(1000, 999999);
 
-        // Assign class field (no 'Vector2' type prefix) and avoid spawning exactly on X = 0
         float spawnX = Random.Range(-maxX, maxX);
-        if (Mathf.Abs(spawnX) < 5f) spawnX = (spawnX < 0f) ? -5.5f : 5.5f;
+        if (Mathf.Abs(spawnX) < 0.5f) spawnX = (spawnX < 0f) ? -0.5f : 0.5f;
         currentPosition = new Vector2(spawnX, Random.Range(-maxZ, maxZ));
         transform.position = new Vector3(currentPosition.x, 0f, currentPosition.y);
 
@@ -80,14 +82,31 @@ public class MeshClient : MonoBehaviour
         if (!driver.IsCreated) return;
         driver.ScheduleUpdate().Complete();
 
-        if (serverConn.IsCreated) PollConnection(serverConn);
-        if (pendingConn.IsCreated) PollConnection(pendingConn);
+        // Drain 100% of driver events every frame
+        DrainDriverEvents();
+
+        // Recover automatically if a staged handoff ever stalls
+        if (handoffInProgress && Time.time - handoffStartTime > 1.0f)
+        {
+            handoffInProgress = false;
+            if (pendingConn.IsCreated)
+            {
+                driver.Disconnect(pendingConn);
+                pendingConn = default;
+            }
+        }
 
         // Swap staged connection once handshake completes
         if (pendingConn.IsCreated && driver.GetConnectionState(pendingConn) == NetworkConnection.State.Connected)
         {
-            if (serverConn.IsCreated)
-                driver.Disconnect(serverConn);
+            if (retiringConn.IsCreated)
+                driver.Disconnect(retiringConn);
+
+            retiringConn = serverConn;
+            // 100ms grace period for server simulator queue to drain
+            // This ensures all packets queued in simPipeline on the old connection 
+            // have time to execute before we close the socket
+            retiringConnTime = Time.time + 0.1f;
 
             serverConn = pendingConn;
             pendingConn = default;
@@ -95,15 +114,25 @@ public class MeshClient : MonoBehaviour
             handoffInProgress = false;
         }
 
+        // Close retiring socket after in-flight packets finish draining
+        // 100ms is enough for simPipeline (20ms delay) to fully drain
+        if (retiringConn.IsCreated && Time.time >= retiringConnTime)
+        {
+            driver.Disconnect(retiringConn);
+            retiringConn = default;
+        }
+
         SendMovementInput();
         transform.position = new Vector3(currentPosition.x, 0f, currentPosition.y);
     }
 
-    private void PollConnection(NetworkConnection conn)
+    private void DrainDriverEvents()
     {
         DataStreamReader stream;
+        NetworkConnection conn;
         NetworkEvent.Type cmd;
-        while ((cmd = driver.PopEventForConnection(conn, out stream)) != NetworkEvent.Type.Empty)
+
+        while ((cmd = driver.PopEvent(out conn, out stream)) != NetworkEvent.Type.Empty)
         {
             if (cmd == NetworkEvent.Type.Data)
             {
@@ -136,6 +165,7 @@ public class MeshClient : MonoBehaviour
                     if (targetPlayerId == myPlayerId && !handoffInProgress)
                     {
                         handoffInProgress = true;
+                        handoffStartTime = Time.time;
                         activeRegionIndex = newRegion;
                         ushort newPort = (newRegion == 0) ? region0Port : region1Port;
                         pendingConn = driver.Connect(NetworkEndpoint.Parse(serverIp, newPort));
@@ -146,29 +176,32 @@ public class MeshClient : MonoBehaviour
             {
                 if (conn == serverConn) serverConn = default;
                 if (conn == pendingConn) pendingConn = default;
-                break;
+                if (conn == retiringConn) retiringConn = default;
             }
         }
     }
 
     private void SendMovementInput()
     {
+        // Don't send while handoff is in progress
         if (!serverConn.IsCreated || handoffInProgress)
             return;
 
         if (driver.GetConnectionState(serverConn) != NetworkConnection.State.Connected)
             return;
 
-        // Send initial registration with chosen random spawn position
         if (!connectedToActiveServer)
         {
-            driver.BeginSend(NetworkPipeline.Null, serverConn, out DataStreamWriter w);
-            w.WriteByte((byte)PacketType.ClientRegistration);
-            w.WriteInt(myPlayerId);
-            w.WriteFloat(currentPosition.x);
-            w.WriteFloat(currentPosition.y);
-            driver.EndSend(w);
-            connectedToActiveServer = true;
+            // Send registration on first connection
+            if (driver.BeginSend(NetworkPipeline.Null, serverConn, out DataStreamWriter w) >= 0)
+            {
+                w.WriteByte((byte)PacketType.ClientRegistration);
+                w.WriteInt(myPlayerId);
+                w.WriteFloat(currentPosition.x);
+                w.WriteFloat(currentPosition.y);
+                driver.EndSend(w);
+                connectedToActiveServer = true;
+            }
             return;
         }
 
@@ -178,7 +211,6 @@ public class MeshClient : MonoBehaviour
             if (Time.time >= nextDirectionChangeTime)
                 PickNewBotDirection();
 
-            // Bounce cleanly off outer map boundaries
             if (currentPosition.x > maxX) botMoveDir.x = -Mathf.Abs(botMoveDir.x);
             if (currentPosition.x < -maxX) botMoveDir.x = Mathf.Abs(botMoveDir.x);
             if (currentPosition.y > maxZ) botMoveDir.y = -Mathf.Abs(botMoveDir.y);
@@ -194,14 +226,16 @@ public class MeshClient : MonoBehaviour
         if (move != Vector2.zero)
         {
             inputSeq++;
-            driver.BeginSend(NetworkPipeline.Null, serverConn, out DataStreamWriter w);
-            w.WriteByte((byte)PacketType.ClientInput);
-            w.WriteInt(myPlayerId);
-            w.WriteUInt(inputSeq);
-            w.WriteFloat(move.x);
-            w.WriteFloat(move.y);
-            w.WriteDouble(Time.realtimeSinceStartupAsDouble);
-            driver.EndSend(w);
+            if (driver.BeginSend(NetworkPipeline.Null, serverConn, out DataStreamWriter w) >= 0)
+            {
+                w.WriteByte((byte)PacketType.ClientInput);
+                w.WriteInt(myPlayerId);
+                w.WriteUInt(inputSeq);
+                w.WriteFloat(move.x);
+                w.WriteFloat(move.y);
+                w.WriteDouble(Time.realtimeSinceStartupAsDouble);
+                driver.EndSend(w);
+            }
         }
     }
 

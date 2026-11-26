@@ -1,11 +1,11 @@
 /*
- * This is a custom packet for 
- * communication between servers
- * It is minimal, but operates purely with
- * the goal of transfering a basic
- * player state during spatial
- * boundary handoffs.
- */
+ 
+This is a custom packet for
+communication between servers
+It is minimal, but operates purely with
+the goal of transfering a basic
+player state during spatial
+boundary handoffs.*/
 
 using Unity.Collections;
 using Unity.Networking.Transport;
@@ -17,7 +17,7 @@ public enum PacketType : byte
     WorldSnapshot = 2,
     GhostSync = 3,
     AuthorityHandoff = 4,
-    ClientRegistration = 5 
+    ClientRegistration = 5
 }
 
 public struct PlayerState
