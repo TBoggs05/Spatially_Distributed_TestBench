@@ -162,3 +162,4 @@ MonoBehaviour:
   myPlayerId: -1
   maxX: 50
   maxZ: 50
+  activeRegionIndex: 0

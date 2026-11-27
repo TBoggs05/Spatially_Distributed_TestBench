@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using System.Text;
 using Unity.Collections;
 using Unity.Networking.Transport;
@@ -42,11 +43,11 @@ public class MeshClient : MonoBehaviour
 
     void Start()
     {
-        if (myPlayerId < 0) myPlayerId = Random.Range(1000, 999999);
+        if (myPlayerId < 0) myPlayerId = UnityEngine.Random.Range(1000, 999999);
 
-        float spawnX = Random.Range(-maxX, maxX);
+        float spawnX = UnityEngine.Random.Range(-maxX, maxX);
         if (Mathf.Abs(spawnX) < 0.5f) spawnX = (spawnX < 0f) ? -0.5f : 0.5f;
-        currentPosition = new Vector2(spawnX, Random.Range(-maxZ, maxZ));
+        currentPosition = new Vector2(spawnX, UnityEngine.Random.Range(-maxZ, maxZ));
         transform.position = new Vector3(currentPosition.x, 0f, currentPosition.y);
 
         PickNewBotDirection();
@@ -79,34 +80,49 @@ public class MeshClient : MonoBehaviour
 
     void Update()
     {
+      
         if (!driver.IsCreated) return;
+
         driver.ScheduleUpdate().Complete();
+
 
         // Drain 100% of driver events every frame
         DrainDriverEvents();
 
         // Recover automatically if a staged handoff ever stalls
-        if (handoffInProgress && Time.time - handoffStartTime > 1.0f)
+       if (handoffInProgress && Time.time - handoffStartTime > 1.0f)
         {
             handoffInProgress = false;
             if (pendingConn.IsCreated)
             {
-                driver.Disconnect(pendingConn);
+                if (driver.GetConnectionState(pendingConn) != NetworkConnection.State.Disconnected)
+                {
+                    driver.Disconnect(pendingConn);
+                }
                 pendingConn = default;
             }
         }
 
+
         // Swap staged connection once handshake completes
         if (pendingConn.IsCreated && driver.GetConnectionState(pendingConn) == NetworkConnection.State.Connected)
         {
+            // Close retiring socket after in-flight packets finish draining
             if (retiringConn.IsCreated)
-                driver.Disconnect(retiringConn);
+            {
+                if (driver.GetConnectionState(retiringConn) != NetworkConnection.State.Disconnected)
+                {
+                    driver.Disconnect(retiringConn);
+                }
+                retiringConn = default;
+            }
+
 
             retiringConn = serverConn;
             // 100ms grace period for server simulator queue to drain
             // This ensures all packets queued in simPipeline on the old connection 
             // have time to execute before we close the socket
-            retiringConnTime = Time.time + 0.1f;
+            retiringConnTime = Time.time + 0.4f;
 
             serverConn = pendingConn;
             pendingConn = default;
@@ -116,11 +132,16 @@ public class MeshClient : MonoBehaviour
 
         // Close retiring socket after in-flight packets finish draining
         // 100ms is enough for simPipeline (20ms delay) to fully drain
-        if (retiringConn.IsCreated && Time.time >= retiringConnTime)
+        // Close retiring socket after in-flight packets finish draining
+        if (retiringConn.IsCreated)
         {
-            driver.Disconnect(retiringConn);
+            if (driver.GetConnectionState(retiringConn) != NetworkConnection.State.Disconnected)
+            {
+                driver.Disconnect(retiringConn);
+            }
             retiringConn = default;
         }
+
 
         SendMovementInput();
         transform.position = new Vector3(currentPosition.x, 0f, currentPosition.y);
@@ -241,9 +262,9 @@ public class MeshClient : MonoBehaviour
 
     private void PickNewBotDirection()
     {
-        float angle = Random.Range(0f, Mathf.PI * 2f);
+        float angle = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
         botMoveDir = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)).normalized;
-        nextDirectionChangeTime = Time.time + Random.Range(1.5f, 4.0f);
+        nextDirectionChangeTime = Time.time + UnityEngine.Random.Range(1.5f, 4.0f);
     }
 
     void OnDestroy()
