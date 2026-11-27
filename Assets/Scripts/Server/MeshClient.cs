@@ -42,11 +42,13 @@ public class MeshClient : MonoBehaviour
     private float handoffStartTime = 0f;
 
     private float lastSnapshotTime;
+    private Renderer renderer;
 
     void Start()
     {
         if (myPlayerId < 0) myPlayerId = UnityEngine.Random.Range(1000, 999999);
-
+        renderer = GetComponent<Renderer>();
+        
         float spawnX = UnityEngine.Random.Range(-maxX, maxX);
         if (Mathf.Abs(spawnX) < 0.5f) spawnX = (spawnX < 0f) ? -0.5f : 0.5f;
         currentPosition = new Vector2(spawnX, UnityEngine.Random.Range(-maxZ, maxZ));
@@ -69,11 +71,13 @@ public class MeshClient : MonoBehaviour
         {
             serverConn = driver.Connect(NetworkEndpoint.Parse(serverIp, region0Port));
             activeRegionIndex = 0;
+            renderer.material.color = Color.blue;
         }
         else
         {
             serverConn = driver.Connect(NetworkEndpoint.Parse(serverIp, region1Port));
             activeRegionIndex = 1;
+            renderer.material.color = Color.red;
         }
 
         csvLog.AppendLine("Timestamp,ActiveRegion,PlayerX,PlayerZ,RTT_Ms");
@@ -194,6 +198,14 @@ public class MeshClient : MonoBehaviour
                         handoffInProgress = true;
                         handoffStartTime = Time.time;
                         activeRegionIndex = newRegion;
+                        if(activeRegionIndex == 0)
+                        {
+                            renderer.material.color = Color.blue;
+                        }
+                        else
+                        {
+                            renderer.material.color = Color.red;
+                        }
                         ushort newPort = (newRegion == 0) ? region0Port : region1Port;
                         pendingConn = driver.Connect(NetworkEndpoint.Parse(serverIp, newPort));
                     }

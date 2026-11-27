@@ -63,8 +63,8 @@ public class RegionalServer : MonoBehaviour
 
         var clientSettings = new NetworkSettings(); //configure the network driver before creation
         clientSettings.WithNetworkConfigParameters(
-            sendQueueCapacity: 4096,
-     receiveQueueCapacity: 4096
+            sendQueueCapacity: 16384, //originally 4096, upped for bigger population tests
+     receiveQueueCapacity: 16384
         );
         clientSettings.WithSimulatorStageParameters(
             maxPacketCount: 10000, 
@@ -82,7 +82,7 @@ public class RegionalServer : MonoBehaviour
         meshDriver.Bind(NetworkEndpoint.AnyIpv4.WithPort(peerMeshPort));
         meshDriver.Listen();
         //NetworkConnection - burst compatible and unmanaged => so we put it in container safely and pass to C# job workers
-        clientConnections = new NativeList<NetworkConnection>(256, Allocator.Persistent); //A list of networkconnection structs for handling individual clients
+        clientConnections = new NativeList<NetworkConnection>(1200, Allocator.Persistent); //A list of networkconnection structs for handling individual clients
     }
     void FixedUpdate()
     {
@@ -162,6 +162,24 @@ public class RegionalServer : MonoBehaviour
                         state.EchoClientTimestamp = timestamp;
                         state.IsGhost = false;
                         authPlayers[pId] = state;
+                    }
+                }
+            }
+            else if (type == PacketType.ClientUnregister)
+            {
+                if (connToPlayerId.TryGetValue(conn, out int pId))
+                {
+                    connToPlayerId.Remove(conn);
+                    if (playerIdToConn.TryGetValue(pId, out var activeConn) && activeConn == conn)
+                        playerIdToConn.Remove(pId);
+                }
+
+                for (int i = clientConnections.Length - 1; i >= 0; i--)
+                {
+                    if (clientConnections[i] == conn)
+                    {
+                        clientConnections.RemoveAtSwapBack(i);
+                        break;
                     }
                 }
             }

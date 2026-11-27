@@ -17,7 +17,8 @@ public enum PacketType : byte
     WorldSnapshot = 2,
     GhostSync = 3,
     AuthorityHandoff = 4,
-    ClientRegistration = 5
+    ClientRegistration = 5,
+    ClientUnregister = 6
 }
 
 public struct PlayerState
