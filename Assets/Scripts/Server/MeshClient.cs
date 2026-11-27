@@ -41,6 +41,8 @@ public class MeshClient : MonoBehaviour
     private bool handoffInProgress = false;
     private float handoffStartTime = 0f;
 
+    private float lastSnapshotTime;
+
     void Start()
     {
         if (myPlayerId < 0) myPlayerId = UnityEngine.Random.Range(1000, 999999);
@@ -80,7 +82,7 @@ public class MeshClient : MonoBehaviour
 
     void Update()
     {
-      
+        lastSnapshotTime = Time.time;
         if (!driver.IsCreated) return;
 
         driver.ScheduleUpdate().Complete();
@@ -145,6 +147,10 @@ public class MeshClient : MonoBehaviour
 
         SendMovementInput();
         transform.position = new Vector3(currentPosition.x, 0f, currentPosition.y);
+        if (Time.time - lastSnapshotTime > 0.5f)
+        {
+            Debug.LogWarning($"[Client {myPlayerId}] Stalled at X={transform.position.x:F2} | Region={activeRegionIndex} | Handoff={handoffInProgress} | ConnState={driver.GetConnectionState(serverConn)}");
+        }
     }
 
     private void DrainDriverEvents()
